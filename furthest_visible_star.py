@@ -16,6 +16,9 @@ The final table columns (in order) are:
   - Luminosity Class
   - Variable Star Type
   - Brightness Range
+
+Numeric columns are formatted with three significant digits for magnitude,
+and five for parallaxes and distances.
 """
 
 from astroquery.gaia import Gaia
@@ -43,7 +46,7 @@ job = Gaia.launch_job(query)
 gaia_results = job.get_results()
 print("Gaia query returned {} rows.".format(len(gaia_results)))
 
-# Conversion: 1 parsec = 3.26156 light years.
+# Conversion factor: 1 parsec = 3.26156 light years.
 PC_TO_LY = 3.26156
 
 def compute_distance_ly(parallax_mas):
@@ -60,10 +63,8 @@ lower_bound_distances = []
 for row in gaia_results:
     p = row['parallax']
     sigma = row['parallax_error']
-    d_nom = compute_distance_ly(p)
-    d_lb = compute_lower_bound_distance_ly(p, sigma)
-    nominal_distances.append(d_nom)
-    lower_bound_distances.append(d_lb)
+    nominal_distances.append(compute_distance_ly(p))
+    lower_bound_distances.append(compute_lower_bound_distance_ly(p, sigma))
 
 gaia_results['distance_ly_nominal'] = nominal_distances
 gaia_results['distance_ly_lower_bound'] = lower_bound_distances
@@ -85,8 +86,8 @@ custom_simbad.add_votable_fields('MAIN_ID','ids','sp','otype')
 def extract_luminosity_class(sp_type):
     """
     Try to extract the luminosity class from a spectral type string.
-    Looks for common luminosity classes (I, II, III, IV, V) possibly with extra letters.
-    Returns "N/A" if none is found.
+    Looks for patterns (I, II, III, IV, or V) possibly with extra letters.
+    Returns "N/A" if no match is found.
     """
     if sp_type is None or sp_type.strip() == "":
         return "N/A"
@@ -98,16 +99,16 @@ def extract_luminosity_class(sp_type):
 def extract_common_name(ids_field, main_id):
     """
     Given the SIMBAD IDS field (a string of alternative names, separated by |)
-    and the main_id, pick a candidate that seems like a common name.
-    Returns "N/A" if no candidate meets the heuristic.
+    and the main_id, choose one candidate that appears to be a common name.
+    Returns "N/A" if none is found.
     """
     if ids_field is None:
         return "N/A"
     parts = [part.strip() for part in ids_field.split('|')]
-    # Remove the main_id from the list
+    # Remove the main_id from the list.
     candidates = [x for x in parts if x != main_id]
     for candidate in candidates:
-        # If candidate contains any Greek letters or does not match a catalog pattern:
+        # Heuristic: if candidate contains Greek letters or does not follow a catalog pattern.
         if any(greek in candidate for greek in ['α','β','γ','δ','ε','ζ','η','θ','ι','κ','λ','μ','ν','ξ','ο','π','ρ','σ','τ','υ','φ','χ','ψ','ω']):
             return candidate
         if not re.match(r'^(HD|Gaia|TYC|2MASS|HIP)\s*\d+', candidate, re.IGNORECASE):
@@ -116,38 +117,34 @@ def extract_common_name(ids_field, main_id):
 
 def get_simbad_info(ra, dec, radius=2*u.arcsec):
     """
-    Given coordinates (in degrees), perform a cone search in SIMBAD (default radius 2″)
-    and return a dict with the following keys:
+    Given coordinates (in degrees), perform a cone search in SIMBAD.
+    Try with radius=2″; if no result, try with 5″, then 10″.
+    Return a dict with keys:
       - main_id
       - common_name
       - sp_type
       - lum_class
       - var_type
       - brightness_range
-    If no result is found with the given radius, try again with a larger radius (up to 5″).
     Returns "N/A" for all fields if no match is found.
     """
     coord = SkyCoord(ra=ra*u.deg, dec=dec*u.deg, frame='icrs')
     try:
         result = custom_simbad.query_region(coord, radius=radius)
     except Exception as e:
-        print("SIMBAD query error at RA={:.5f}, Dec={:.5f}: {}".format(ra, dec, e))
+        print(f"SIMBAD query error at RA={ra:.5f}, Dec={dec:.5f}: {e}")
         result = None
 
     if result is None or len(result) == 0:
-        if radius < 5*u.arcsec:
-            # Try with a larger search radius
-            return get_simbad_info(ra, dec, radius=5*u.arcsec)
+        if radius < 10*u.arcsec:
+            return get_simbad_info(ra, dec, radius=radius + 3*u.arcsec)
         else:
-            print("No SIMBAD match found for RA={:.5f}, Dec={:.5f}".format(ra, dec))
+            print(f"No SIMBAD match found for RA={ra:.5f}, Dec={dec:.5f}")
             return {"main_id": "N/A", "common_name": "N/A", "sp_type": "N/A",
                     "lum_class": "N/A", "var_type": "N/A", "brightness_range": "N/A"}
 
     # Use the first match.
-    if 'MAIN_ID' in result.colnames:
-        main_id = result['MAIN_ID'][0]
-    else:
-        main_id = "N/A"
+    main_id = result['MAIN_ID'][0] if 'MAIN_ID' in result.colnames else "N/A"
     if isinstance(main_id, bytes):
         main_id = main_id.decode('utf-8')
         
@@ -164,12 +161,9 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
     otype = result['OTYPE'][0] if 'OTYPE' in result.colnames and result['OTYPE'][0] is not None else "N/A"
     if isinstance(otype, bytes):
         otype = otype.decode('utf-8')
-    if otype is not None and ("Var" in otype or "V*" in otype):
-        var_type = otype
-    else:
-        var_type = "N/A"
+    var_type = otype if otype is not None and ("Var" in otype or "V*" in otype) else "N/A"
         
-    brightness_range = "N/A"  # Not typically provided in SIMBAD.
+    brightness_range = "N/A"  # Not typically provided.
     common_name = extract_common_name(ids_field, main_id)
     
     return {"main_id": main_id,
@@ -179,7 +173,7 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
             "var_type": var_type,
             "brightness_range": brightness_range}
 
-# For the top20 Gaia objects, query SIMBAD and build lists for the new columns.
+# For the top20 Gaia objects, query SIMBAD and store the new columns.
 sim_main_ids = []
 sim_common_names = []
 sim_sp_types = []
@@ -208,7 +202,7 @@ top20['variable_star_type'] = sim_var_types
 top20['brightness_range'] = sim_brightness_ranges
 
 ###############################
-# Part 3. Reorder and Output the Final Table
+# Part 3. Reorder and Format the Final Table
 ###############################
 
 # Desired column order:
@@ -231,12 +225,35 @@ final_columns = ['common_name', 'simbad_main_id', 'source_id', 'phot_g_mean_mag'
                  'spectral_type', 'luminosity_class',
                  'variable_star_type', 'brightness_range']
 
-final_table = top20[final_columns]
+final_table =   top20[final_columns]
 
-# Print the final table.
+# Round numeric columns:
+# phot_g_mean_mag: 3 decimals; parallax, parallax_error, distances: 5 decimals.
+def format_row(row):
+    # Copy row to a dict so we can format numbers.
+    return {
+        'common_name': row['common_name'],
+        'simbad_main_id': row['simbad_main_id'],
+        'source_id': row['source_id'],
+        'phot_g_mean_mag': f"{row['phot_g_mean_mag']:.3f}",
+        'parallax': f"{row['parallax']:.5f}",
+        'parallax_error': f"{row['parallax_error']:.5f}",
+        'distance_ly_nominal': f"{row['distance_ly_nominal']:.5f}",
+        'distance_ly_lower_bound': f"{row['distance_ly_lower_bound']:.5f}",
+        'spectral_type': row['spectral_type'],
+        'luminosity_class': row['luminosity_class'],
+        'variable_star_type': row['variable_star_type'],
+        'brightness_range': row['brightness_range']
+    }
+
+formatted_rows = [format_row(row) for row in final_table]
+
+# Create a new table with the formatted rows.
+formatted_table = Table(rows=formatted_rows, names=final_columns)
+
 print("\nFinal Table (top 20 Gaia objects with SIMBAD info):")
-print(final_table)
+print(formatted_table)
 
-# Optionally, save the final table to a CSV file.
-final_table.write("gaia_top20_with_simbad.csv", format="csv", overwrite=True)
+# Save the final table to a CSV file.
+formatted_table.write("gaia_top20_with_simbad.csv", format="csv", overwrite=True)
 print("\nFinal table saved to 'gaia_top20_with_simbad.csv'.")
