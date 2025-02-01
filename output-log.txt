@@ -18,7 +18,7 @@ SIMBAD result row:
   sp_qual: C
   sp_type: A0mA1Va
   sp_bibcode: 2003AJ....126.2048G
-Test result for Sirius: {'main_id': 'N/A', 'common_name': 'N/A', 'sp_type': 'N/A', 'lum_class': 'N/A', 'var_type': 'N/A', 'brightness_range': 'N/A'}
+Test result for Sirius: {'main_id': '* alf CMa', 'common_name': 'CNS5 1676', 'sp_type': 'N/A', 'lum_class': 'N/A', 'var_type': 'N/A', 'brightness_range': 'N/A'}
 
 Querying SIMBAD for top-5 Gaia objects …
 Querying SIMBAD at RA=325.87694, Dec=58.78003, radius=2.0 arcsec
@@ -97,17 +97,17 @@ SIMBAD result row:
   sp_type: G3_0-Ia
   sp_bibcode: 1989ApJS...71..245K
 
-SIMBAD main IDs for top 5: ['N/A', 'N/A', 'N/A', 'N/A', 'N/A']
-SIMBAD common names for top 5: ['N/A', 'N/A', 'N/A', 'N/A', 'N/A']
+SIMBAD main IDs for top 5: ['* mu. Cep', 'V* V810 Cen', '* phi Cas', '* x Car', '* omi01 Cen']
+SIMBAD common names for top 5: ['Gaia DR3 2202630001603369856', 'Gaia DR3 5333358794709001216', 'Gaia DR3 413828761929696256', 'Gaia DR3 5337891256535666176', 'Gaia DR3 5336490478704008960']
 SIMBAD spectral types for top 5: ['N/A', 'N/A', 'N/A', 'N/A', 'N/A']
 
 Final Table (top 5 Gaia objects with SIMBAD info):
-common main_id        src_id        Gmag   plx   ...  d_lb spec lum var brange
------- ------- ------------------- ----- ------- ... ----- ---- --- --- ------
-   N/A     N/A 2202630001603369856 2.451 0.11902 ...  8522  N/A N/A N/A    N/A
-   N/A     N/A 5333358794709001216 4.792 0.15369 ... 13238  N/A N/A N/A    N/A
-   N/A     N/A  413828761929696256 4.736 0.21417 ... 10944  N/A N/A N/A    N/A
-   N/A     N/A 5337891256535666176 3.557 0.22276 ... 10092  N/A N/A N/A    N/A
-   N/A     N/A 5336490478704008960 4.724 0.32537 ...  8179  N/A N/A N/A    N/A
+           common              main_id          src_id       ... lum var brange
+---------------------------- ----------- ------------------- ... --- --- ------
+Gaia DR3 2202630001603369856   * mu. Cep 2202630001603369856 ... N/A N/A    N/A
+Gaia DR3 5333358794709001216 V* V810 Cen 5333358794709001216 ... N/A N/A    N/A
+ Gaia DR3 413828761929696256   * phi Cas  413828761929696256 ... N/A N/A    N/A
+Gaia DR3 5337891256535666176     * x Car 5337891256535666176 ... N/A N/A    N/A
+Gaia DR3 5336490478704008960 * omi01 Cen 5336490478704008960 ... N/A N/A    N/A
 
 Final table saved to 'gaia_top5_with_simbad.csv'.
