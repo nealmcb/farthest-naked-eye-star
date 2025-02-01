@@ -101,7 +101,7 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
         print(f"SIMBAD query error at RA={ra:.5f}, Dec={dec:.5f}: {e}")
         result = None
 
-    # Normalize column names to lowercase using rename_column:
+    # Rename columns to lowercase.
     if result is not None:
         orig_cols = result.colnames.copy()
         for col in orig_cols:
@@ -115,7 +115,7 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
             return {"main_id": "N/A", "common_name": "N/A", "sp_type": "N/A",
                     "lum_class": "N/A", "var_type": "N/A", "brightness_range": "N/A"}
 
-    # Print the full first row of the result for diagnostics.
+    # Print the full first row of the result for debugging.
     print("SIMBAD result row:")
     for col in result.colnames:
         print(f"  {col}: {result[col][0]}")
@@ -123,25 +123,33 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
     main_id = result['main_id'][0] if 'main_id' in result.colnames else "N/A"
     if isinstance(main_id, bytes):
         main_id = main_id.decode('utf-8')
+        
     ids_field = result['ids'][0] if 'ids' in result.colnames else "N/A"
     if isinstance(ids_field, bytes):
         ids_field = ids_field.decode('utf-8')
-    sp_type = result['sp'][0] if 'sp' in result.colnames and result['sp'][0] is not None else "N/A"
+        
+    # Use "sp_type" now rather than "sp"
+    sp_type = result['sp_type'][0] if 'sp_type' in result.colnames and result['sp_type'][0] is not None else "N/A"
     if isinstance(sp_type, bytes):
         sp_type = sp_type.decode('utf-8')
+        
     lum_class = extract_luminosity_class(sp_type) if sp_type != "N/A" else "N/A"
+    
     otype = result['otype'][0] if 'otype' in result.colnames and result['otype'][0] is not None else "N/A"
     if isinstance(otype, bytes):
         otype = otype.decode('utf-8')
     var_type = otype if otype is not None and ("Var" in otype or "V*" in otype) else "N/A"
-    brightness_range = "N/A"
+        
+    brightness_range = "N/A"  # Not provided by SIMBAD.
     common_name = extract_common_name(ids_field, main_id)
+    
     return {"main_id": main_id,
             "common_name": common_name,
             "sp_type": sp_type if sp_type is not None else "N/A",
             "lum_class": lum_class,
             "var_type": var_type,
             "brightness_range": brightness_range}
+
 
 # Optional test: Query SIMBAD for Sirius (RA=101.28716, Dec=-16.71612)
 print("\nTesting SIMBAD query with Sirius (RA=101.28716, Dec=-16.71612):")
