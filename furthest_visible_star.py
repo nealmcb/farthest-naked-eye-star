@@ -1,35 +1,18 @@
 #!/usr/bin/env python3
 """
-This script queries Gaia DR3 for stars with G < 6 and positive parallax,
-computes two distance estimates (nominal and conservative lower-bound) in light years,
-and then produces two sets of results:
-  - top 20 by nominal (expected) distance
-  - top 20 by lower-bound distance
-For each candidate the script queries SIMBAD to obtain:
-  - SIMBAD main identifier (main_id)
-  - A common name (ignoring Gaia names)
-  - Visual magnitude (Vmag, from flux(V))
-  - Spectral type (sp_type) and a parsed luminosity class (lum)
-  - Variable star type (var)
-  - (Brightness range is set to "N/A")
-Finally, the output table (with shortened headers) is constructed with the following columns:
-  1. main_id (SIMBAD main identifier)
-  2. common (common name)
-  3. Gaia DR3 (Gaia source id)
-  4. Vmag (SIMBAD visual magnitude)
-  5. Gmag (Gaia phot_g_mean_mag)
-  6. ly_nom (nominal distance in ly, rounded to integer)
-  7. ly_lb (lower-bound distance in ly, rounded to integer)
-  8. spec (spectral type)
-  9. lum (luminosity class)
- 10. var (variable star type)
- 11. brange (brightness range, "N/A")
- 12. Con (constellation abbreviation, computed from RA,Dec)
- 13. RA (Gaia right ascension)
- 14. Dec (Gaia declination)
-Two CSV files are saved:
-  - gaia_top20_nominal.csv
-  - gaia_top20_lowerbound.csv
+This script implements the following strategy:
+  - Query Gaia DR3 for stars with Gmag < 6.2 and positive parallax.
+  - Compute nominal and conservative lower-bound distances (in ly).
+  - Form two candidate tables: one sorted by nominal distance and one by lower-bound distance.
+  - Initially select the top 50 candidates from each.
+  - Enrich each candidate with SIMBAD data:
+      * SIMBAD main identifier, common name, Vmag, spectral type, luminosity class, variable star type.
+  - Then filter each table to keep only those with Vmag < 6.
+  - Finally, build and save final tables with the following columns:
+      main_id, common, Gaia DR3, Vmag, Gmag, ly_nom, ly_lb, spec, lum, var, brange, Con, RA, Dec.
+  - Print how many objects remain in each selection.
+  
+Dependencies: astroquery, astropy, re, (and pandas if desired for further analysis).
 """
 
 from astroquery.gaia import Gaia
@@ -43,19 +26,19 @@ import re
 # Part 1. Gaia Query and Distance Calculation
 ###############################
 
-# Query Gaia DR3 (with a TOP clause to get up to 10,000 rows)
+# Query Gaia DR3 for stars with Gmag < 6.2.
 gaia_query = """
-SELECT TOP 25000 source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
+SELECT TOP 10000 source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
 FROM gaiadr3.gaia_source
-WHERE phot_g_mean_mag < 7
+WHERE phot_g_mean_mag < 6.2
   AND parallax > 0
 """
 print("Launching Gaia DR3 query …")
 job = Gaia.launch_job(gaia_query)
 gaia_results = job.get_results()
-print("Gaia query returned {} rows.".format(len(gaia_results)))
+print(f"Gaia query returned {len(gaia_results)} rows.")
 
-# Conversion factor: 1 pc = 3.26156 ly.
+# Conversion factor: 1 parsec = 3.26156 light years.
 PC_TO_LY = 3.26156
 
 def compute_distance_ly(parallax_mas):
@@ -75,22 +58,22 @@ for row in gaia_results:
 gaia_results['distance_ly_nominal'] = nominal_distances
 gaia_results['distance_ly_lower_bound'] = lower_bound_distances
 
-# Create two sorted copies:
+# Make two sorted copies:
 sorted_nom = gaia_results.copy()
 sorted_nom.sort('distance_ly_nominal', reverse=True)
-top20_nom = sorted_nom[:20]
+top50_nom = sorted_nom[:50]
 
 sorted_lb = gaia_results.copy()
 sorted_lb.sort('distance_ly_lower_bound', reverse=True)
-top20_lb = sorted_lb[:20]
+top50_lb = sorted_lb[:50]
 
 ###############################
-# Part 2. SIMBAD Query Function and Helpers
+# Part 2. SIMBAD Query and Helper Functions
 ###############################
 
-# Set up SIMBAD: request MAIN_ID, ids, sp_type, otype, and flux(V) for visual mag.
 custom_simbad = Simbad()
 custom_simbad.reset_votable_fields()
+# Request: MAIN_ID, ids, sp_type, otype, and visual magnitude ("v").
 custom_simbad.add_votable_fields('MAIN_ID','ids','sp_type','otype','flux(V)')
 
 def extract_luminosity_class(sp_type):
@@ -103,7 +86,6 @@ def extract_common_name(ids_field, main_id):
     if ids_field is None:
         return "N/A"
     parts = [part.strip() for part in ids_field.split('|')]
-    # Exclude the main_id and any candidate containing "Gaia"
     candidates = [x for x in parts if x != main_id and "gaia" not in x.lower()]
     for candidate in candidates:
         if any(greek in candidate for greek in ['α','β','γ','δ','ε','ζ','η','θ','ι','κ','λ','μ','ν','ξ','ο','π','ρ','σ','τ','υ','φ','χ','ψ','ω']):
@@ -121,7 +103,7 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
         print(f"SIMBAD query error at RA={ra:.5f}, Dec={dec:.5f}: {e}")
         result = None
 
-    # Normalize column names to lowercase using rename_column.
+    # Normalize column names to lowercase.
     if result is not None:
         orig_cols = result.colnames.copy()
         for col in orig_cols:
@@ -159,15 +141,14 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
     var_type = otype if otype is not None and ("Var" in otype or "V*" in otype) else "N/A"
     
     brightness_range = "N/A"  # Not provided by SIMBAD.
-    
-    # Get visual magnitude: check for column "v" instead of "flux(v)"
+    # For Vmag, check if column "v" exists. (Sometimes SIMBAD returns it as "v" even if flux(V) is requested.)
     if 'v' in result.colnames and result['v'][0] is not None:
         vmag = result['v'][0]
         if isinstance(vmag, bytes):
             vmag = vmag.decode('utf-8')
     else:
         vmag = "N/A"
-        
+    
     common_name = extract_common_name(ids_field, main_id)
     
     return {"main_id": main_id,
@@ -179,7 +160,7 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
             "vmag": vmag}
 
 ###############################
-# Part 3. Enrich Each Top 20 Set with SIMBAD Data
+# Part 3. Enrich the Candidate Tables with SIMBAD Data
 ###############################
 
 def enrich_with_simbad(top_table):
@@ -210,30 +191,48 @@ def enrich_with_simbad(top_table):
     top_table['vmag'] = sim_vmags
     return top_table
 
-print("\nEnriching top20 nominal candidates with SIMBAD info …")
-top20_nom = enrich_with_simbad(top20_nom)
-print("\nEnriching top20 lower-bound candidates with SIMBAD info …")
-top20_lb = enrich_with_simbad(top20_lb)
+print("\nEnriching nominal candidates (top50_nom) with SIMBAD info …")
+top50_nom = enrich_with_simbad(top50_nom)
+print("\nEnriching lower-bound candidates (top50_lb) with SIMBAD info …")
+top50_lb = enrich_with_simbad(top50_lb)
+
+# Now, filter each table to keep only rows with Vmag < 6.
+def filter_by_vmag(top_table):
+    filtered_rows = []
+    for row in top_table:
+        try:
+            vmag = float(row['vmag'])
+        except (ValueError, TypeError):
+            continue
+        if vmag < 6:
+            filtered_rows.append(row)
+    return Table(rows=filtered_rows, names=top_table.colnames)
+
+filtered_nom = filter_by_vmag(top50_nom)
+filtered_lb = filter_by_vmag(top50_lb)
+
+print(f"\nNumber of nominal candidates with Vmag < 6: {len(filtered_nom)}")
+print(f"Number of lower-bound candidates with Vmag < 6: {len(filtered_lb)}")
 
 ###############################
 # Part 4. Build Final Tables with New Column Order and Labels
 ###############################
 
-# We'll construct the final table with these columns:
-# 1. main_id, 2. common, 3. Gaia DR3, 4. Vmag, 5. Gmag, 6. ly_nom, 7. ly_lb,
-# 8. spec, 9. lum, 10. var, 11. brange, 12. Con, 13. RA, 14. Dec
 def build_final_table(top_table):
     final_data = []
     for row in top_table:
         d_nom_int = int(round(row['distance_ly_nominal']))
         d_lb_int = int(round(row['distance_ly_lower_bound']))
-        # Compute constellation abbreviation from RA, Dec.
+        # Compute constellation abbreviation using get_constellation (without keyword if unsupported)
         coord = SkyCoord(ra=row['ra']*u.deg, dec=row['dec']*u.deg, frame='icrs')
-        constellation = coord.get_constellation(short_name=True)
+        try:
+            constellation = coord.get_constellation(short_name=True)
+        except TypeError:
+            constellation = coord.get_constellation()
         final_data.append({
-            'main_id': row['simbad_main_id'],         # SIMBAD main identifier
-            'common': row['common_name'],             # common name
-            'Gaia DR3': row['source_id'],             # Gaia source id
+            'main_id': row['simbad_main_id'],  # SIMBAD main identifier
+            'common': row['common_name'],        # common name
+            'Gaia DR3': row['source_id'],        # Gaia source id
             'Vmag': f"{float(row['vmag']):.3f}" if row['vmag']!="N/A" else "N/A",
             'Gmag': f"{row['phot_g_mean_mag']:.3f}",
             'ly_nom': f"{d_nom_int}",
@@ -246,18 +245,17 @@ def build_final_table(top_table):
             'RA': f"{row['ra']:.5f}",
             'Dec': f"{row['dec']:.5f}"
         })
-    # Define final headers (order as desired)
     return Table(rows=final_data, names=['main_id','common','Gaia DR3','Vmag','Gmag','ly_nom','ly_lb','spec','lum','var','brange','Con','RA','Dec'])
 
-final_table_nom = build_final_table(top20_nom)
-final_table_lb = build_final_table(top20_lb)
+final_table_nom = build_final_table(filtered_nom)
+final_table_lb = build_final_table(filtered_lb)
 
-print("\nFinal Table (Top 20 Nominal Distance):")
+print("\nFinal Table (Nominal candidates with Vmag < 6):")
 print(final_table_nom)
-print("\nFinal Table (Top 20 Lower-bound Distance):")
+print("\nFinal Table (Lower-bound candidates with Vmag < 6):")
 print(final_table_lb)
 
-# Save the final tables to CSV files.
+# Save final tables to CSV files.
 final_table_nom.write("gaia_top20_nominal.csv", format="csv", overwrite=True)
 final_table_lb.write("gaia_top20_lowerbound.csv", format="csv", overwrite=True)
 print("\nFinal tables saved to 'gaia_top20_nominal.csv' and 'gaia_top20_lowerbound.csv'.")

@@ -1,0 +1,10 @@
+python vmag_gmag_diffs.py 
+Descriptive statistics for Vmag - Gmag:
+count    20.000000
+mean      0.780150
+std       0.897149
+min      -0.161000
+25%       0.173250
+50%       0.331500
+75%       1.349500
+max       3.135000
