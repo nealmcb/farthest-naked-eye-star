@@ -42,7 +42,7 @@ job = Gaia.launch_job(gaia_query)
 gaia_results = job.get_results()
 print("Gaia query returned {} rows.".format(len(gaia_results)))
 
-# Conversion factor: 1 parsec = 3.26156 light years.
+# Conversion: 1 parsec = 3.26156 light years.
 PC_TO_LY = 3.26156
 
 def compute_distance_ly(parallax_mas):
@@ -51,7 +51,6 @@ def compute_distance_ly(parallax_mas):
 def compute_lower_bound_distance_ly(parallax_mas, parallax_err_mas):
     return (1000.0 / (parallax_mas + parallax_err_mas)) * PC_TO_LY
 
-# Add distance columns (nominal and lower bound)
 nominal_distances = []
 lower_bound_distances = []
 for row in gaia_results:
@@ -63,7 +62,6 @@ for row in gaia_results:
 gaia_results['distance_ly_nominal'] = nominal_distances
 gaia_results['distance_ly_lower_bound'] = lower_bound_distances
 
-# Sort by nominal distance descending and take top 5 for debugging.
 sorted_gaia = gaia_results.copy()
 sorted_gaia.sort('distance_ly_nominal', reverse=True)
 top5 = sorted_gaia[:5]
@@ -86,10 +84,8 @@ def extract_common_name(ids_field, main_id):
     if ids_field is None:
         return "N/A"
     parts = [part.strip() for part in ids_field.split('|')]
-    # Remove main_id from list.
     candidates = [x for x in parts if x != main_id]
     for candidate in candidates:
-        # If candidate contains Greek letters or isn't a catalog identifier.
         if any(greek in candidate for greek in ['α','β','γ','δ','ε','ζ','η','θ','ι','κ','λ','μ','ν','ξ','ο','π','ρ','σ','τ','υ','φ','χ','ψ','ω']):
             return candidate
         if not re.match(r'^(HD|Gaia|TYC|2MASS|HIP)\s*\d+', candidate, re.IGNORECASE):
@@ -105,9 +101,11 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
         print(f"SIMBAD query error at RA={ra:.5f}, Dec={dec:.5f}: {e}")
         result = None
 
+    # Normalize column names to lowercase using rename_column:
     if result is not None:
-        # Normalize column names to lowercase.
-        result.colnames = [col.lower() for col in result.colnames]
+        orig_cols = result.colnames.copy()
+        for col in orig_cols:
+            result.rename_column(col, col.lower())
 
     if result is None or len(result) == 0:
         if radius < 10*u.arcsec:
@@ -117,10 +115,11 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
             return {"main_id": "N/A", "common_name": "N/A", "sp_type": "N/A",
                     "lum_class": "N/A", "var_type": "N/A", "brightness_range": "N/A"}
 
+    # Print the full first row of the result for diagnostics.
     print("SIMBAD result row:")
     for col in result.colnames:
         print(f"  {col}: {result[col][0]}")
-
+    
     main_id = result['main_id'][0] if 'main_id' in result.colnames else "N/A"
     if isinstance(main_id, bytes):
         main_id = main_id.decode('utf-8')
@@ -135,7 +134,7 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
     if isinstance(otype, bytes):
         otype = otype.decode('utf-8')
     var_type = otype if otype is not None and ("Var" in otype or "V*" in otype) else "N/A"
-    brightness_range = "N/A"  # Not provided by SIMBAD
+    brightness_range = "N/A"
     common_name = extract_common_name(ids_field, main_id)
     return {"main_id": main_id,
             "common_name": common_name,
@@ -144,13 +143,11 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
             "var_type": var_type,
             "brightness_range": brightness_range}
 
-
-# Optional test: Query SIMBAD for Sirius (should return a match).
+# Optional test: Query SIMBAD for Sirius (RA=101.28716, Dec=-16.71612)
 print("\nTesting SIMBAD query with Sirius (RA=101.28716, Dec=-16.71612):")
 test_info = get_simbad_info(101.28716, -16.71612)
 print("Test result for Sirius:", test_info)
 
-# For each of the top 5 Gaia objects, query SIMBAD.
 sim_main_ids = []
 sim_common_names = []
 sim_sp_types = []
@@ -170,20 +167,13 @@ for row in top5:
     sim_var_types.append(sim_info["var_type"])
     sim_brightness_ranges.append(sim_info["brightness_range"])
 
-# For debugging, print out the SIMBAD info lists.
-print("\nSIMBAD main IDs for top 5:", sim_main_ids)
-print("SIMBAD common names for top 5:", sim_common_names)
-print("SIMBAD spectral types for top 5:", sim_sp_types)
-
 ###############################
 # Part 3. Merge Results into a Final Table with Shortened Headers
 ###############################
 
-# We'll construct a new list of dictionaries (one per object) with these headers:
-# common, main_id, src_id, Gmag, plx, plx_err, d_nom, d_lb, spec, lum, var, brange
+# Construct a list of dictionaries for the final table:
 final_data = []
 for i, row in enumerate(top5):
-    # Round distances to integers.
     d_nom_int = int(round(row['distance_ly_nominal']))
     d_lb_int = int(round(row['distance_ly_lower_bound']))
     final_data.append({
@@ -206,6 +196,5 @@ final_table = Table(rows=final_data, names=['common','main_id','src_id','Gmag','
 print("\nFinal Table (top 5 Gaia objects with SIMBAD info):")
 print(final_table)
 
-# Save the final table to a CSV file.
 final_table.write("gaia_top5_with_simbad.csv", format="csv", overwrite=True)
 print("\nFinal table saved to 'gaia_top5_with_simbad.csv'.")
