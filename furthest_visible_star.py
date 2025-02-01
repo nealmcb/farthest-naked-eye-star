@@ -2,7 +2,7 @@
 """
 Query Gaia DR3 for stars with G < 6, compute distances (in light years)
 from the parallax (and from parallax+error for a conservative lower bound),
-then for the top 20 objects (by distance) retrieve SIMBAD name and star–type info.
+then for the top 20 objects retrieve SIMBAD name and star–type info.
 The final table columns (in order) are:
   - Common Name (if available)
   - SIMBAD Main Identifier
@@ -83,7 +83,7 @@ top20 = sorted_gaia[:20]
 # - SP_TYPE (spectral type)
 # - OTYPE (object type, which we will use to help flag variable stars)
 custom_simbad = Simbad()
-custom_simbad.remove_votable_fields('coordinates')  # already have RA,Dec
+custom_simbad.reset_votable_fields()  # reset to default fields
 custom_simbad.add_votable_fields('ids', 'sp', 'otype')
 
 def extract_luminosity_class(sp_type):
@@ -104,7 +104,7 @@ def extract_common_name(ids_field, main_id):
     """
     Given the SIMBAD IDS field (a string of alternative names, separated by |)
     and the main_id, try to pick one common name that isn't just a catalog number.
-    This is heuristic; here we choose the first identifier that doesn't start with "Gaia" or "HD" or similar.
+    This is heuristic; here we choose the first identifier that doesn't start with "Gaia", "HD", etc.
     If no such candidate is found, return "N/A".
     """
     if ids_field is None:
@@ -116,17 +116,16 @@ def extract_common_name(ids_field, main_id):
     # Look for a candidate that looks like a common name:
     for candidate in candidates:
         # Heuristic: if it contains a Greek letter or is not just a catalog number.
-        # For example, "Alpha Centauri" or "Sirius" are good.
         if any(greek in candidate for greek in ['α','β','γ','δ','ε','ζ','η','θ','ι','κ','λ','μ','ν','ξ','ο','π','ρ','σ','τ','υ','φ','χ','ψ','ω']):
             return candidate
-        # Also, if the candidate contains a common name-like string (e.g., "Capella")
+        # Also, if the candidate does not match a typical catalog pattern
         if not re.match(r'^(HD|Gaia|TYC|2MASS|HIP)\s*\d+', candidate, re.IGNORECASE):
             return candidate
     return "N/A"
 
 def get_simbad_info(ra, dec):
     """
-    Given coordinates (in degrees), do a cone search in SIMBAD (radius 2 arcsec)
+    Given coordinates (in degrees), perform a cone search in SIMBAD (radius 2 arcsec)
     and return a dict with the following keys:
        - main_id
        - common_name
@@ -147,17 +146,26 @@ def get_simbad_info(ra, dec):
                 "lum_class": "N/A", "var_type": "N/A", "brightness_range": "N/A"}
 
     # Use the first match.
-    main_id = result['MAIN_ID'][0].decode('utf-8') if isinstance(result['MAIN_ID'][0], bytes) else result['MAIN_ID'][0]
-    ids_field = result['IDS'][0].decode('utf-8') if isinstance(result['IDS'][0], bytes) else result['IDS'][0]
-    sp_type = result['SP_TYPE'][0].decode('utf-8') if (result['SP_TYPE'][0] is not None and isinstance(result['SP_TYPE'][0], bytes)) else (result['SP_TYPE'][0] if result['SP_TYPE'][0] is not None else "N/A")
+    main_id = result['MAIN_ID'][0]
+    # Convert bytes to string if needed.
+    if isinstance(main_id, bytes):
+        main_id = main_id.decode('utf-8')
+    ids_field = result['IDS'][0]
+    if isinstance(ids_field, bytes):
+        ids_field = ids_field.decode('utf-8')
+    sp_type = result['SP_TYPE'][0] if result['SP_TYPE'][0] is not None else "N/A"
+    if isinstance(sp_type, bytes):
+        sp_type = sp_type.decode('utf-8')
     lum_class = extract_luminosity_class(sp_type) if sp_type != "N/A" else "N/A"
-    # For variable star type, we check the object type field (OTYPE).
-    otype = result['OTYPE'][0].decode('utf-8') if isinstance(result['OTYPE'][0], bytes) else result['OTYPE'][0]
+    # For variable star type, check the object type field (OTYPE).
+    otype = result['OTYPE'][0]
+    if isinstance(otype, bytes):
+        otype = otype.decode('utf-8')
     if otype is not None and ("Var" in otype or "V*" in otype):
         var_type = otype
     else:
         var_type = "N/A"
-    # Brightness range is not typically available in SIMBAD; we fill "N/A"
+    # Brightness range is not typically available in SIMBAD; set to "N/A"
     brightness_range = "N/A"
     common_name = extract_common_name(ids_field, main_id)
     return {"main_id": main_id,
