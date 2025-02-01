@@ -3,19 +3,19 @@
 Query Gaia DR3 for stars with G < 6, compute distances (in light years)
 from the parallax (and from parallax+error for a conservative lower bound),
 then for the top 20 objects retrieve SIMBAD name and star–type info.
-The final table columns (in order) are:
-  - Common Name (if available)
-  - SIMBAD Main Identifier
-  - Gaia DR3 source_id
-  - Gmag
-  - parallax (mas)
-  - parallax_error (mas)
-  - nominal distance (ly)
-  - lower-bound distance (ly)
-  - Spectral Type
-  - Luminosity Class
-  - Variable Star Type
-  - Brightness Range
+The final CSV file uses shortened headers:
+  - common: Common name (if available)
+  - main_id: SIMBAD main identifier
+  - src_id: Gaia DR3 source_id
+  - Gmag: phot_g_mean_mag
+  - plx: parallax (mas)
+  - plx_err: parallax_error (mas)
+  - d_nom: nominal distance (ly)
+  - d_lb: lower-bound distance (ly)
+  - spec: spectral type
+  - lum: luminosity class
+  - var: variable star type
+  - brange: brightness range
 
 Numeric columns are formatted with three decimals for magnitude,
 and five for parallaxes and distances.
@@ -71,7 +71,6 @@ top20 = sorted_gaia[:20]
 # Part 2. Retrieve SIMBAD information for the top 20 objects.
 ###############################
 
-# Set up SIMBAD
 custom_simbad = Simbad()
 custom_simbad.reset_votable_fields()
 custom_simbad.add_votable_fields('MAIN_ID','ids','sp','otype')
@@ -113,9 +112,10 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
             return {"main_id": "N/A", "common_name": "N/A", "sp_type": "N/A",
                     "lum_class": "N/A", "var_type": "N/A", "brightness_range": "N/A"}
 
-    # Debug: print the columns available and the first row
-    # print("SIMBAD result columns:", result.colnames)
-    # print("SIMBAD first row:", result[0])
+    # Print the full result for diagnostic purposes.
+    print("SIMBAD result:")
+    for col in result.colnames:
+        print(f"  {col}: {result[col][0]}")
     
     main_id = result['MAIN_ID'][0] if 'MAIN_ID' in result.colnames else "N/A"
     if isinstance(main_id, bytes):
@@ -146,7 +146,8 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
             "var_type": var_type,
             "brightness_range": brightness_range}
 
-# (Optional) Test SIMBAD query with a known bright star (e.g., Sirius at RA=101.28716, Dec=-16.71612)
+# (Optional) Test SIMBAD query with a known bright star (e.g., Sirius: RA=101.28716, Dec=-16.71612)
+print("\nTesting SIMBAD query with Sirius:")
 test_info = get_simbad_info(101.28716, -16.71612)
 print("Test SIMBAD result for Sirius:", test_info)
 
@@ -177,31 +178,50 @@ top20['variable_star_type'] = sim_var_types
 top20['brightness_range'] = sim_brightness_ranges
 
 ###############################
-# Part 3. Reorder and Format the Final Table
+# Part 3. Reorder and Format the Final Table with Shortened Headers
 ###############################
 
-final_columns = ['common_name', 'simbad_main_id', 'source_id', 'phot_g_mean_mag',
-                 'parallax', 'parallax_error',
-                 'distance_ly_nominal', 'distance_ly_lower_bound',
-                 'spectral_type', 'luminosity_class',
-                 'variable_star_type', 'brightness_range']
+# Shortened column names:
+# common, main_id, src_id, Gmag, plx, plx_err, d_nom, d_lb, spec, lum, var, brange
+final_columns = ['common', 'main_id', 'src_id', 'Gmag',
+                 'plx', 'plx_err', 'd_nom', 'd_lb',
+                 'spec', 'lum', 'var', 'brange']
 
-final_table = top20[final_columns]
+# Build a new table with these shortened headers.
+data = []
+for row in top20:
+    data.append({
+        'common': row['common_name'],
+        'main_id': row['simbad_main_id'],
+        'src_id': row['source_id'],
+        'Gmag': row['phot_g_mean_mag'],
+        'plx': row['parallax'],
+        'plx_err': row['parallax_error'],
+        'd_nom': row['distance_ly_nominal'],
+        'd_lb': row['distance_ly_lower_bound'],
+        'spec': row['spectral_type'],
+        'lum': row['luminosity_class'],
+        'var': row['variable_star_type'],
+        'brange': row['brightness_range']
+    })
 
+final_table = Table(rows=data, names=final_columns)
+
+# Format numeric columns: Gmag (3 decimals); plx, plx_err, d_nom, d_lb (5 decimals)
 def format_row(row):
     return {
-        'common_name': row['common_name'],
-        'simbad_main_id': row['simbad_main_id'],
-        'source_id': row['source_id'],
-        'phot_g_mean_mag': f"{row['phot_g_mean_mag']:.3f}",
-        'parallax': f"{row['parallax']:.5f}",
-        'parallax_error': f"{row['parallax_error']:.5f}",
-        'distance_ly_nominal': f"{row['distance_ly_nominal']:.5f}",
-        'distance_ly_lower_bound': f"{row['distance_ly_lower_bound']:.5f}",
-        'spectral_type': row['spectral_type'],
-        'luminosity_class': row['luminosity_class'],
-        'variable_star_type': row['variable_star_type'],
-        'brightness_range': row['brightness_range']
+        'common': row['common'],
+        'main_id': row['main_id'],
+        'src_id': row['src_id'],
+        'Gmag': f"{row['Gmag']:.3f}",
+        'plx': f"{row['plx']:.5f}",
+        'plx_err': f"{row['plx_err']:.5f}",
+        'd_nom': f"{row['d_nom']:.5f}",
+        'd_lb': f"{row['d_lb']:.5f}",
+        'spec': row['spec'],
+        'lum': row['lum'],
+        'var': row['var'],
+        'brange': row['brange']
     }
 
 formatted_rows = [format_row(row) for row in final_table]

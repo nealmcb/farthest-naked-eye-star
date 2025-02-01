@@ -1,4 +1,4 @@
-common_name,simbad_main_id,source_id,phot_g_mean_mag,parallax,parallax_error,distance_ly_nominal,distance_ly_lower_bound,spectral_type,luminosity_class,variable_star_type,brightness_range
+common,main_id,src_id,Gmag,plx,plx_err,d_nom,d_lb,spec,lum,var,brange
 N/A,N/A,2202630001603369856,2.451,0.11902,0.26369,27402.63640,8522.29188,N/A,N/A,N/A,N/A
 N/A,N/A,5333358794709001216,4.792,0.15369,0.09270,21222.33769,13237.63632,N/A,N/A,N/A,N/A
 N/A,N/A,413828761929696256,4.736,0.21417,0.08385,15229.11673,10944.25659,N/A,N/A,N/A,N/A
