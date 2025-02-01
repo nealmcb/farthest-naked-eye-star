@@ -32,7 +32,7 @@ import re
 ###############################
 
 gaia_query = """
-SELECT TOP 3000 source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
+SELECT TOP 10000 source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
 FROM gaiadr3.gaia_source
 WHERE phot_g_mean_mag < 6
   AND parallax > 0
