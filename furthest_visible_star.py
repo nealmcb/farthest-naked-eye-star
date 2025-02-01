@@ -68,7 +68,7 @@ for row in gaia_results:
 gaia_results['distance_ly_nominal'] = nominal_distances
 gaia_results['distance_ly_lower_bound'] = lower_bound_distances
 
-# For our purposes, we choose the top 20 objects sorted by nominal distance (largest first).
+# For our purposes, choose the top 20 objects sorted by nominal distance (largest first).
 sorted_gaia = gaia_results.copy()
 sorted_gaia.sort('distance_ly_nominal', reverse=True)
 top20 = sorted_gaia[:20]
@@ -78,7 +78,6 @@ top20 = sorted_gaia[:20]
 ###############################
 
 # Set up a custom SIMBAD query.
-# We reset the votable fields, then explicitly add MAIN_ID along with other fields.
 custom_simbad = Simbad()
 custom_simbad.reset_votable_fields()  # reset to default fields
 custom_simbad.add_votable_fields('MAIN_ID','ids','sp','otype')
@@ -86,7 +85,7 @@ custom_simbad.add_votable_fields('MAIN_ID','ids','sp','otype')
 def extract_luminosity_class(sp_type):
     """
     Try to extract the luminosity class from a spectral type string.
-    Looks for common luminosity classes (I, II, III, IV, V) possibly with additional letters.
+    Looks for common luminosity classes (I, II, III, IV, V) possibly with extra letters.
     Returns "N/A" if none is found.
     """
     if sp_type is None or sp_type.strip() == "":
@@ -99,45 +98,52 @@ def extract_luminosity_class(sp_type):
 def extract_common_name(ids_field, main_id):
     """
     Given the SIMBAD IDS field (a string of alternative names, separated by |)
-    and the main_id, pick a common name that isn't just a catalog number.
-    Returns "N/A" if no suitable candidate is found.
+    and the main_id, pick a candidate that seems like a common name.
+    Returns "N/A" if no candidate meets the heuristic.
     """
     if ids_field is None:
         return "N/A"
     parts = [part.strip() for part in ids_field.split('|')]
+    # Remove the main_id from the list
     candidates = [x for x in parts if x != main_id]
     for candidate in candidates:
-        # Heuristic: choose a candidate containing Greek letters or not matching catalog patterns.
+        # If candidate contains any Greek letters or does not match a catalog pattern:
         if any(greek in candidate for greek in ['α','β','γ','δ','ε','ζ','η','θ','ι','κ','λ','μ','ν','ξ','ο','π','ρ','σ','τ','υ','φ','χ','ψ','ω']):
             return candidate
         if not re.match(r'^(HD|Gaia|TYC|2MASS|HIP)\s*\d+', candidate, re.IGNORECASE):
             return candidate
     return "N/A"
 
-def get_simbad_info(ra, dec):
+def get_simbad_info(ra, dec, radius=2*u.arcsec):
     """
-    Given coordinates (in degrees), perform a cone search in SIMBAD (radius 2 arcsec)
-    and return a dict with keys:
+    Given coordinates (in degrees), perform a cone search in SIMBAD (default radius 2″)
+    and return a dict with the following keys:
       - main_id
       - common_name
       - sp_type
       - lum_class
       - var_type
       - brightness_range
+    If no result is found with the given radius, try again with a larger radius (up to 5″).
     Returns "N/A" for all fields if no match is found.
     """
     coord = SkyCoord(ra=ra*u.deg, dec=dec*u.deg, frame='icrs')
     try:
-        result = custom_simbad.query_region(coord, radius=2*u.arcsec)
+        result = custom_simbad.query_region(coord, radius=radius)
     except Exception as e:
+        print("SIMBAD query error at RA={:.5f}, Dec={:.5f}: {}".format(ra, dec, e))
         result = None
 
     if result is None or len(result) == 0:
-        return {"main_id": "N/A", "common_name": "N/A", "sp_type": "N/A",
-                "lum_class": "N/A", "var_type": "N/A", "brightness_range": "N/A"}
+        if radius < 5*u.arcsec:
+            # Try with a larger search radius
+            return get_simbad_info(ra, dec, radius=5*u.arcsec)
+        else:
+            print("No SIMBAD match found for RA={:.5f}, Dec={:.5f}".format(ra, dec))
+            return {"main_id": "N/A", "common_name": "N/A", "sp_type": "N/A",
+                    "lum_class": "N/A", "var_type": "N/A", "brightness_range": "N/A"}
 
     # Use the first match.
-    # Ensure that the expected columns exist.
     if 'MAIN_ID' in result.colnames:
         main_id = result['MAIN_ID'][0]
     else:
@@ -155,7 +161,7 @@ def get_simbad_info(ra, dec):
         
     lum_class = extract_luminosity_class(sp_type) if sp_type != "N/A" else "N/A"
     
-    otype = result['OTYPE'][0] if 'OTYPE' in result.colnames else "N/A"
+    otype = result['OTYPE'][0] if 'OTYPE' in result.colnames and result['OTYPE'][0] is not None else "N/A"
     if isinstance(otype, bytes):
         otype = otype.decode('utf-8')
     if otype is not None and ("Var" in otype or "V*" in otype):
