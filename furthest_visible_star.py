@@ -222,7 +222,7 @@ def build_final_table(top_table):
         d_lb_int = int(round(row['distance_ly_lower_bound']))
         # Compute constellation abbreviation from RA, Dec.
         coord = SkyCoord(ra=row['ra']*u.deg, dec=row['dec']*u.deg, frame='icrs')
-        constellation = coord.get_constellation(short=True)
+        constellation = coord.get_constellation(short_name=True)
         final_data.append({
             'main_id': row['simbad_main_id'],         # SIMBAD main identifier
             'common': row['common_name'],             # common name
