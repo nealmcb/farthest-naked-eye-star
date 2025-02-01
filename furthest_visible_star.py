@@ -77,24 +77,20 @@ top20 = sorted_gaia[:20]
 # Part 2. Retrieve SIMBAD information for the top 20 objects.
 ###############################
 
-# Set up a custom SIMBAD query that returns:
-# - MAIN_ID (SIMBAD main identifier)
-# - IDS (all alternative identifiers)
-# - SP_TYPE (spectral type)
-# - OTYPE (object type, which we will use to help flag variable stars)
+# Set up a custom SIMBAD query.
+# We reset the votable fields, then explicitly add MAIN_ID along with other fields.
 custom_simbad = Simbad()
 custom_simbad.reset_votable_fields()  # reset to default fields
-custom_simbad.add_votable_fields('ids', 'sp', 'otype')
+custom_simbad.add_votable_fields('MAIN_ID','ids','sp','otype')
 
 def extract_luminosity_class(sp_type):
     """
     Try to extract the luminosity class from a spectral type string.
-    This function looks for common luminosity classes (I, II, III, IV, V) possibly with additional letters.
-    If none is found, return "N/A".
+    Looks for common luminosity classes (I, II, III, IV, V) possibly with additional letters.
+    Returns "N/A" if none is found.
     """
     if sp_type is None or sp_type.strip() == "":
         return "N/A"
-    # Example: "M2Iab" -> look for I, II, III, IV, or V patterns
     match = re.search(r'(I{1,3}[ab]?)|(IV)|(V)', sp_type)
     if match:
         return match.group(0)
@@ -103,22 +99,17 @@ def extract_luminosity_class(sp_type):
 def extract_common_name(ids_field, main_id):
     """
     Given the SIMBAD IDS field (a string of alternative names, separated by |)
-    and the main_id, try to pick one common name that isn't just a catalog number.
-    This is heuristic; here we choose the first identifier that doesn't start with "Gaia", "HD", etc.
-    If no such candidate is found, return "N/A".
+    and the main_id, pick a common name that isn't just a catalog number.
+    Returns "N/A" if no suitable candidate is found.
     """
     if ids_field is None:
         return "N/A"
-    # Split the IDS string (identifiers are separated by '|' in SIMBAD)
     parts = [part.strip() for part in ids_field.split('|')]
-    # Remove the main_id from the list
     candidates = [x for x in parts if x != main_id]
-    # Look for a candidate that looks like a common name:
     for candidate in candidates:
-        # Heuristic: if it contains a Greek letter or is not just a catalog number.
+        # Heuristic: choose a candidate containing Greek letters or not matching catalog patterns.
         if any(greek in candidate for greek in ['α','β','γ','δ','ε','ζ','η','θ','ι','κ','λ','μ','ν','ξ','ο','π','ρ','σ','τ','υ','φ','χ','ψ','ω']):
             return candidate
-        # Also, if the candidate does not match a typical catalog pattern
         if not re.match(r'^(HD|Gaia|TYC|2MASS|HIP)\s*\d+', candidate, re.IGNORECASE):
             return candidate
     return "N/A"
@@ -126,14 +117,14 @@ def extract_common_name(ids_field, main_id):
 def get_simbad_info(ra, dec):
     """
     Given coordinates (in degrees), perform a cone search in SIMBAD (radius 2 arcsec)
-    and return a dict with the following keys:
-       - main_id
-       - common_name
-       - sp_type
-       - lum_class
-       - var_type
-       - brightness_range
-    If no result is found, return "N/A" for all.
+    and return a dict with keys:
+      - main_id
+      - common_name
+      - sp_type
+      - lum_class
+      - var_type
+      - brightness_range
+    Returns "N/A" for all fields if no match is found.
     """
     coord = SkyCoord(ra=ra*u.deg, dec=dec*u.deg, frame='icrs')
     try:
@@ -146,28 +137,35 @@ def get_simbad_info(ra, dec):
                 "lum_class": "N/A", "var_type": "N/A", "brightness_range": "N/A"}
 
     # Use the first match.
-    main_id = result['MAIN_ID'][0]
-    # Convert bytes to string if needed.
+    # Ensure that the expected columns exist.
+    if 'MAIN_ID' in result.colnames:
+        main_id = result['MAIN_ID'][0]
+    else:
+        main_id = "N/A"
     if isinstance(main_id, bytes):
         main_id = main_id.decode('utf-8')
-    ids_field = result['IDS'][0]
+        
+    ids_field = result['IDS'][0] if 'IDS' in result.colnames else "N/A"
     if isinstance(ids_field, bytes):
         ids_field = ids_field.decode('utf-8')
-    sp_type = result['SP_TYPE'][0] if result['SP_TYPE'][0] is not None else "N/A"
+        
+    sp_type = result['SP'][0] if 'SP' in result.colnames and result['SP'][0] is not None else "N/A"
     if isinstance(sp_type, bytes):
         sp_type = sp_type.decode('utf-8')
+        
     lum_class = extract_luminosity_class(sp_type) if sp_type != "N/A" else "N/A"
-    # For variable star type, check the object type field (OTYPE).
-    otype = result['OTYPE'][0]
+    
+    otype = result['OTYPE'][0] if 'OTYPE' in result.colnames else "N/A"
     if isinstance(otype, bytes):
         otype = otype.decode('utf-8')
     if otype is not None and ("Var" in otype or "V*" in otype):
         var_type = otype
     else:
         var_type = "N/A"
-    # Brightness range is not typically available in SIMBAD; set to "N/A"
-    brightness_range = "N/A"
+        
+    brightness_range = "N/A"  # Not typically provided in SIMBAD.
     common_name = extract_common_name(ids_field, main_id)
+    
     return {"main_id": main_id,
             "common_name": common_name,
             "sp_type": sp_type if sp_type is not None else "N/A",
@@ -229,7 +227,7 @@ final_columns = ['common_name', 'simbad_main_id', 'source_id', 'phot_g_mean_mag'
 
 final_table = top20[final_columns]
 
-# Print the final table with a formatted header.
+# Print the final table.
 print("\nFinal Table (top 20 Gaia objects with SIMBAD info):")
 print(final_table)
 
