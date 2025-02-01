@@ -223,18 +223,20 @@ def build_final_table(top_table):
     for row in top_table:
         d_nom_int = int(round(row['distance_ly_nominal']))
         d_lb_int = int(round(row['distance_ly_lower_bound']))
-        # Compute constellation abbreviation using get_constellation (without keyword if unsupported)
+        # Compute constellation abbreviation
         coord = SkyCoord(ra=row['ra']*u.deg, dec=row['dec']*u.deg, frame='icrs')
         try:
             constellation = coord.get_constellation(short_name=True)
         except TypeError:
             constellation = coord.get_constellation()
         final_data.append({
-            'main_id': row['simbad_main_id'],  # SIMBAD main identifier
-            'common': row['common_name'],        # common name
-            'Gaia DR3': row['source_id'],        # Gaia source id
-            'Vmag': f"{float(row['vmag']):.3f}" if row['vmag']!="N/A" else "N/A",
+            'main_id': row['simbad_main_id'],         # SIMBAD main identifier
+            'common': row['common_name'],             # common name
+            'Gaia DR3': row['source_id'],             # Gaia source id
+            'Vmag': f"{float(row['vmag']):.3f}" if row['vmag'] != "N/A" else "N/A",
             'Gmag': f"{row['phot_g_mean_mag']:.3f}",
+            'plx': f"{row['parallax']:.5f}",           # Parallax in mas
+            'plx_err': f"{row['parallax_error']:.5f}",  # Parallax error in mas
             'ly_nom': f"{d_nom_int}",
             'ly_lb': f"{d_lb_int}",
             'spec': row['sp_type'],
@@ -245,8 +247,12 @@ def build_final_table(top_table):
             'RA': f"{row['ra']:.5f}",
             'Dec': f"{row['dec']:.5f}"
         })
-    return Table(rows=final_data, names=['main_id','common','Gaia DR3','Vmag','Gmag','ly_nom','ly_lb','spec','lum','var','brange','Con','RA','Dec'])
+    return Table(rows=final_data, names=[
+        'main_id','common','Gaia DR3','Vmag','Gmag',
+        'plx','plx_err','ly_nom','ly_lb','spec','lum','var','brange','Con','RA','Dec'
+    ])
 
+# Example usage:
 final_table_nom = build_final_table(filtered_nom)
 final_table_lb = build_final_table(filtered_lb)
 
@@ -255,7 +261,7 @@ print(final_table_nom)
 print("\nFinal Table (Lower-bound candidates with Vmag < 6):")
 print(final_table_lb)
 
-# Save final tables to CSV files.
+# Save to CSV:
 final_table_nom.write("gaia_top20_nominal.csv", format="csv", overwrite=True)
 final_table_lb.write("gaia_top20_lowerbound.csv", format="csv", overwrite=True)
 print("\nFinal tables saved to 'gaia_top20_nominal.csv' and 'gaia_top20_lowerbound.csv'.")
