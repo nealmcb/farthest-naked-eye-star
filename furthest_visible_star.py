@@ -45,9 +45,9 @@ import re
 
 # Query Gaia DR3 (with a TOP clause to get up to 10,000 rows)
 gaia_query = """
-SELECT TOP 10000 source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
+SELECT TOP 25000 source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
 FROM gaiadr3.gaia_source
-WHERE phot_g_mean_mag < 6
+WHERE phot_g_mean_mag < 7
   AND parallax > 0
 """
 print("Launching Gaia DR3 query …")
