@@ -1,4 +1,4 @@
-# Furthest naked-eye stars via Gaia
+# Farthest naked-eye stars via Gaia
 
 Python software to search Gaia for "most distant naked-eye star" candidates
 
@@ -6,16 +6,19 @@ Code written mostly by ChatGPT o3-mini, evolved via dozens of prompts by Neal Mc
 
 # Usage
 ```
-python furthest_naked_eye_star.py  | tee output-log.txt
+python farthest_naked_eye_star.py  | tee output-log.txt
 csvlook -I gaia_top20_lowerbound.csv
 ```
 
 For line execution and coverage counts:
 
 ```
-python -m trace --count --coverdir=trace_results furthest_naked_eye_star.py
-more trace_results/furthest_visible_star.cover
+python -m trace --count --coverdir=trace_results farthest_naked_eye_star.py
+more trace_results/farthest_visible_star.cover
 ```
+
+# Notes
+Thanks to the 
 
 # TODO
 * Can SIMBAD query be sped up or run in parallel via Gaia IDs for these rather bright stars?
