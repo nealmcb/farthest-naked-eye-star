@@ -11,16 +11,6 @@ This script implements the following strategy:
   - Finally, build and save final tables with the following columns:
       main_id, common, Gaia DR3, Vmag, Gmag, ly_nom, ly_lb, spec, lum, var, brange, Con, RA, Dec.
   - Print how many objects remain in each selection.
-  
-Dependencies: astroquery, astropy, re, (and pandas if desired for further analysis).
-
-TODO:
-* Can SIMBAD query be sped up or run in parallel via Gaia IDs for these rather bright stars?
-  Individual queries take nearly 20 seconds
-* Confirm that get_simbad_info() is getting the right stars
-* Can extract_common_name() be refined?
-* Validate spectral type filtering: re.search(r'(I{1,3}[ab]?)|(IV)|(V)', sp_type)
-  But note that so far they all passed
 """
 
 import logging
@@ -155,7 +145,7 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
     var_type = otype if otype is not None and ("Var" in otype or "V*" in otype) else "N/A"
     
     brightness_range = "N/A"  # Not provided by SIMBAD.
-    # For Vmag, check if column "v" exists. (Sometimes SIMBAD returns it as "v" even if flux(V) is requested.)
+
     if 'v' in result.colnames and result['v'][0] is not None:
         vmag = result['v'][0]
         if isinstance(vmag, bytes):
@@ -178,6 +168,10 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
 ###############################
 
 def enrich_with_simbad(top_table):
+    """Add SIMBAD data to top_table
+    FIXME: this seems overly verbose
+    """
+
     sim_main_ids = []
     sim_common_names = []
     sim_sp_types = []
@@ -266,7 +260,6 @@ def build_final_table(top_table):
         'plx','plx_err','ly_nom','ly_lb','spec','lum','var','brange','Con','RA','Dec'
     ])
 
-# Example usage:
 final_table_nom = build_final_table(filtered_nom)
 final_table_lb = build_final_table(filtered_lb)
 
@@ -278,4 +271,5 @@ print(final_table_lb)
 # Save to CSV:
 final_table_nom.write("gaia_top20_nominal.csv", format="csv", overwrite=True)
 final_table_lb.write("gaia_top20_lowerbound.csv", format="csv", overwrite=True)
+
 print("\nFinal tables saved to 'gaia_top20_nominal.csv' and 'gaia_top20_lowerbound.csv'.")

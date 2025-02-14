@@ -1,0 +1,275 @@
+       #!/usr/bin/env python3
+    1: """
+       This script implements the following strategy:
+         - Query Gaia DR3 for stars with Gmag < 6.2 and positive parallax.
+         - Compute nominal and conservative lower-bound distances (in ly).
+         - Form two candidate tables: one sorted by nominal distance and one by lower-bound distance.
+         - Initially select the top 50 candidates from each.
+         - Enrich each candidate with SIMBAD data:
+             * SIMBAD main identifier, common name, Vmag, spectral type, luminosity class, variable star type.
+         - Then filter each table to keep only those with Vmag < 6.
+         - Finally, build and save final tables with the following columns:
+             main_id, common, Gaia DR3, Vmag, Gmag, ly_nom, ly_lb, spec, lum, var, brange, Con, RA, Dec.
+         - Print how many objects remain in each selection.
+       """
+       
+    1: import logging
+    1: from astroquery.gaia import Gaia
+    1: from astroquery.simbad import Simbad
+    1: from astropy.table import Table
+    1: from astropy.coordinates import SkyCoord
+    1: import astropy.units as u
+    1: import re
+       
+       ###############################
+       # Part 1. Gaia Query and Distance Calculation
+       ###############################
+       
+       # Query Gaia DR3 for stars with Gmag < 6.2, ignoring those with invalid parallax
+       # Note, this Gaia DR3 query returned 8318 rows.
+    1: gaia_query = """
+       SELECT TOP 10000 source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
+       FROM gaiadr3.gaia_source
+       WHERE phot_g_mean_mag < 6.2
+         AND parallax > 0
+       """
+    1: print("Launching Gaia DR3 query …")
+    1: job = Gaia.launch_job(gaia_query)
+    1: gaia_results = job.get_results()
+    1: print(f"Gaia query returned {len(gaia_results)} rows.")
+       
+       # Conversion factor: 1 parsec = 3.26156 light years.
+    1: PC_TO_LY = 3.26156
+       
+    1: def compute_distance_ly(parallax_mas):
+           "Given parallax in mas, compute distance in light years"
+       
+ 8318:     return (1000.0 / parallax_mas) * PC_TO_LY
+       
+    1: def compute_lower_bound_distance_ly(parallax_mas, parallax_err_mas):
+           "Given parallax in mas, increased by STD, return reasonable lower-bound distance in light years"
+       
+ 8318:     return (1000.0 / (parallax_mas + parallax_err_mas)) * PC_TO_LY
+       
+    1: nominal_distances = []
+    1: lower_bound_distances = []
+ 8319: for row in gaia_results:
+ 8318:     p = row['parallax']
+ 8318:     sigma = row['parallax_error']
+ 8318:     nominal_distances.append(compute_distance_ly(p))
+ 8318:     lower_bound_distances.append(compute_lower_bound_distance_ly(p, sigma))
+       
+    1: gaia_results['distance_ly_nominal'] = nominal_distances
+    1: gaia_results['distance_ly_lower_bound'] = lower_bound_distances
+       
+       # Make two sorted copies:
+    1: sorted_nom = gaia_results.copy()
+    1: sorted_nom.sort('distance_ly_nominal', reverse=True)
+    1: top50_nom = sorted_nom[:50]
+       
+    1: sorted_lb = gaia_results.copy()
+    1: sorted_lb.sort('distance_ly_lower_bound', reverse=True)
+    1: top50_lb = sorted_lb[:50]
+       
+       ###############################
+       # Part 2. SIMBAD Query and Helper Functions
+       ###############################
+       
+    1: custom_simbad = Simbad()
+    1: custom_simbad.reset_votable_fields()
+       # Request: MAIN_ID, ids, sp_type, otype, and visual magnitude ("v").
+    1: custom_simbad.add_votable_fields('MAIN_ID','ids','sp_type','otype','V')
+       
+    1: def extract_luminosity_class(sp_type):
+  100:     if sp_type is None or sp_type.strip() == "":
+               return "N/A"
+  100:     m = re.search(r'(I{1,3}[ab]?)|(IV)|(V)', sp_type)
+  100:     return m.group(0) if m else "N/A"
+       
+    1: def extract_common_name(ids_field, main_id):
+  100:     if ids_field is None:
+               return "N/A"
+ 3379:     parts = [part.strip() for part in ids_field.split('|')]
+ 3379:     candidates = [x for x in parts if x != main_id and "gaia" not in x.lower()]
+  172:     for candidate in candidates:
+ 4472:         if any(greek in candidate for greek in ['α','β','γ','δ','ε','ζ','η','θ','ι','κ','λ','μ','ν','ξ','ο','π','ρ','σ','τ','υ','φ','χ','ψ','ω']):
+                   return candidate
+  172:         if not re.match(r'^(HD|TYC|2MASS|HIP)\s*\d+', candidate, re.IGNORECASE):
+  100:             return candidate
+           return "N/A"
+       
+    1: def get_simbad_info(ra, dec, radius=2*u.arcsec):
+  100:     coord = SkyCoord(ra=ra*u.deg, dec=dec*u.deg, frame='icrs')
+  100:     logging.info(f"Querying SIMBAD at RA={ra:.5f}, Dec={dec:.5f}, radius={radius.to(u.arcsec)}")
+  100:     try:
+  100:         result = custom_simbad.query_region(coord, radius=radius)
+           except Exception as e:
+               logging.error(f"SIMBAD query error at RA={ra:.5f}, Dec={dec:.5f}: {e}")
+               result = None
+       
+           # Normalize column names to lowercase.
+  100:     if result is not None:
+  100:         orig_cols = result.colnames.copy()
+ 1300:         for col in orig_cols:
+ 1200:             result.rename_column(col, col.lower())
+       
+  100:     if result is None or len(result) == 0:
+               if radius < 10*u.arcsec:
+                   return get_simbad_info(ra, dec, radius=radius + 3*u.arcsec)
+               else:
+                   logging.error(f"No SIMBAD match found for RA={ra:.5f}, Dec={dec:.5f} (up to radius {radius.to(u.arcsec)})")
+                   return {"main_id": "N/A", "common_name": "N/A", "sp_type": "N/A",
+                           "lum_class": "N/A", "var_type": "N/A", "brightness_range": "N/A", "vmag": "N/A"}
+       
+  100:     logging.info("SIMBAD result row:")
+ 1300:     for col in result.colnames:
+ 1200:         logging.info(f"  {col}: {result[col][0]}")
+           
+  100:     main_id = result['main_id'][0] if 'main_id' in result.colnames else "N/A"
+  100:     if isinstance(main_id, bytes):
+               main_id = main_id.decode('utf-8')
+               
+  100:     ids_field = result['ids'][0] if 'ids' in result.colnames else "N/A"
+  100:     if isinstance(ids_field, bytes):
+               ids_field = ids_field.decode('utf-8')
+               
+  100:     sp_type = result['sp_type'][0] if 'sp_type' in result.colnames and result['sp_type'][0] is not None else "N/A"
+  100:     if isinstance(sp_type, bytes):
+               sp_type = sp_type.decode('utf-8')
+               
+  100:     lum_class = extract_luminosity_class(sp_type) if sp_type != "N/A" else "N/A"
+           
+  100:     otype = result['otype'][0] if 'otype' in result.colnames and result['otype'][0] is not None else "N/A"
+  100:     if isinstance(otype, bytes):
+               otype = otype.decode('utf-8')
+  100:     var_type = otype if otype is not None and ("Var" in otype or "V*" in otype) else "N/A"
+           
+  100:     brightness_range = "N/A"  # Not provided by SIMBAD.
+       
+  100:     if 'v' in result.colnames and result['v'][0] is not None:
+  100:         vmag = result['v'][0]
+  100:         if isinstance(vmag, bytes):
+                   vmag = vmag.decode('utf-8')
+           else:
+               vmag = "N/A"
+           
+  100:     common_name = extract_common_name(ids_field, main_id)
+           
+  200:     return {"main_id": main_id,
+  100:             "common_name": common_name,
+  100:             "sp_type": sp_type if sp_type is not None else "N/A",
+  100:             "lum_class": lum_class,
+  100:             "var_type": var_type,
+  100:             "brightness_range": brightness_range,
+  100:             "vmag": vmag}
+       
+       ###############################
+       # Part 3. Enrich the Candidate Tables with SIMBAD Data
+       ###############################
+       
+    1: def enrich_with_simbad(top_table):
+           """Add SIMBAD data to top_table
+           FIXME: this seems overly verbose
+           """
+       
+    2:     sim_main_ids = []
+    2:     sim_common_names = []
+    2:     sim_sp_types = []
+    2:     sim_lum_classes = []
+    2:     sim_var_types = []
+    2:     sim_brightness_ranges = []
+    2:     sim_vmags = []
+  102:     for row in top_table:
+  100:         ra = row['ra']
+  100:         dec = row['dec']
+  100:         sim_info = get_simbad_info(ra, dec)
+  100:         sim_main_ids.append(sim_info["main_id"])
+  100:         sim_common_names.append(sim_info["common_name"])
+  100:         sim_sp_types.append(sim_info["sp_type"])
+  100:         sim_lum_classes.append(sim_info["lum_class"])
+  100:         sim_var_types.append(sim_info["var_type"])
+  100:         sim_brightness_ranges.append(sim_info["brightness_range"])
+  100:         sim_vmags.append(sim_info["vmag"])
+    2:     top_table['simbad_main_id'] = sim_main_ids
+    2:     top_table['common_name'] = sim_common_names
+    2:     top_table['sp_type'] = sim_sp_types
+    2:     top_table['lum_class'] = sim_lum_classes
+    2:     top_table['var_type'] = sim_var_types
+    2:     top_table['brightness_range'] = sim_brightness_ranges
+    2:     top_table['vmag'] = sim_vmags
+    2:     return top_table
+       
+    1: print("\nEnriching nominal candidates (top50_nom) with SIMBAD info …")
+    1: top50_nom = enrich_with_simbad(top50_nom)
+    1: print("\nEnriching lower-bound candidates (top50_lb) with SIMBAD info …")
+    1: top50_lb = enrich_with_simbad(top50_lb)
+       
+       # Now, filter each table to keep only rows with Vmag < 6.
+    1: def filter_by_vmag(top_table):
+    2:     filtered_rows = []
+  102:     for row in top_table:
+  100:         try:
+  100:             vmag = float(row['vmag'])
+               except (ValueError, TypeError):
+                   continue
+  100:         if vmag < 6:
+   35:             filtered_rows.append(row)
+    2:     return Table(rows=filtered_rows, names=top_table.colnames)
+       
+    1: filtered_nom = filter_by_vmag(top50_nom)
+    1: filtered_lb = filter_by_vmag(top50_lb)
+       
+    1: print(f"\nNumber of nominal candidates with Vmag < 6: {len(filtered_nom)}")
+    1: print(f"Number of lower-bound candidates with Vmag < 6: {len(filtered_lb)}")
+       
+       ###############################
+       # Part 4. Build Final Tables with New Column Order and Labels
+       ###############################
+       
+    1: def build_final_table(top_table):
+    2:     final_data = []
+   37:     for row in top_table:
+   35:         d_nom_int = int(round(row['distance_ly_nominal']))
+   35:         d_lb_int = int(round(row['distance_ly_lower_bound']))
+               # Compute constellation abbreviation
+   35:         coord = SkyCoord(ra=row['ra']*u.deg, dec=row['dec']*u.deg, frame='icrs')
+   35:         try:
+   35:             constellation = coord.get_constellation(short_name=True)
+               except TypeError:
+                   constellation = coord.get_constellation()
+  595:         final_data.append({
+   35:             'main_id': row['simbad_main_id'],         # SIMBAD main identifier
+   35:             'common': row['common_name'],             # common name
+   35:             'Gaia DR3': row['source_id'],             # Gaia source id
+   35:             'Vmag': f"{float(row['vmag']):.3f}" if row['vmag'] != "N/A" else "N/A",
+   35:             'Gmag': f"{row['phot_g_mean_mag']:.3f}",
+   35:             'plx': f"{row['parallax']:.5f}",           # Parallax in mas
+   35:             'plx_err': f"{row['parallax_error']:.5f}",  # Parallax error in mas
+   35:             'ly_nom': f"{d_nom_int}",
+   35:             'ly_lb': f"{d_lb_int}",
+   35:             'spec': row['sp_type'],
+   35:             'lum': row['lum_class'],
+   35:             'var': row['var_type'],
+   35:             'brange': row['brightness_range'],
+   35:             'Con': constellation,
+   35:             'RA': f"{row['ra']:.5f}",
+   35:             'Dec': f"{row['dec']:.5f}"
+               })
+    2:     return Table(rows=final_data, names=[
+               'main_id','common','Gaia DR3','Vmag','Gmag',
+               'plx','plx_err','ly_nom','ly_lb','spec','lum','var','brange','Con','RA','Dec'
+           ])
+       
+       # Example usage:
+    1: final_table_nom = build_final_table(filtered_nom)
+    1: final_table_lb = build_final_table(filtered_lb)
+       
+    1: print("\nFinal Table (Nominal candidates with Vmag < 6):")
+    1: print(final_table_nom)
+    1: print("\nFinal Table (Lower-bound candidates with Vmag < 6):")
+    1: print(final_table_lb)
+       
+       # Save to CSV:
+    1: final_table_nom.write("gaia_top20_nominal.csv", format="csv", overwrite=True)
+    1: final_table_lb.write("gaia_top20_lowerbound.csv", format="csv", overwrite=True)
+    1: print("\nFinal tables saved to 'gaia_top20_nominal.csv' and 'gaia_top20_lowerbound.csv'.")
