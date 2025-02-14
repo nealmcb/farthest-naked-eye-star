@@ -13,8 +13,17 @@ This script implements the following strategy:
   - Print how many objects remain in each selection.
   
 Dependencies: astroquery, astropy, re, (and pandas if desired for further analysis).
+
+TODO:
+* Can SIMBAD query be sped up or run in parallel via Gaia IDs for these rather bright stars?
+  Individual queries take nearly 20 seconds
+* Confirm that get_simbad_info() is getting the right stars
+* Can extract_common_name() be refined?
+* Validate spectral type filtering: re.search(r'(I{1,3}[ab]?)|(IV)|(V)', sp_type)
+  But note that so far they all passed
 """
 
+import logging
 from astroquery.gaia import Gaia
 from astroquery.simbad import Simbad
 from astropy.table import Table
@@ -26,7 +35,8 @@ import re
 # Part 1. Gaia Query and Distance Calculation
 ###############################
 
-# Query Gaia DR3 for stars with Gmag < 6.2.
+# Query Gaia DR3 for stars with Gmag < 6.2, ignoring those with invalid parallax
+# Note, this Gaia DR3 query returned 8318 rows.
 gaia_query = """
 SELECT TOP 10000 source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
 FROM gaiadr3.gaia_source
@@ -42,9 +52,13 @@ print(f"Gaia query returned {len(gaia_results)} rows.")
 PC_TO_LY = 3.26156
 
 def compute_distance_ly(parallax_mas):
+    "Given parallax in mas, compute distance in light years"
+
     return (1000.0 / parallax_mas) * PC_TO_LY
 
 def compute_lower_bound_distance_ly(parallax_mas, parallax_err_mas):
+    "Given parallax in mas, increased by STD, return reasonable lower-bound distance in light years"
+
     return (1000.0 / (parallax_mas + parallax_err_mas)) * PC_TO_LY
 
 nominal_distances = []
@@ -96,11 +110,11 @@ def extract_common_name(ids_field, main_id):
 
 def get_simbad_info(ra, dec, radius=2*u.arcsec):
     coord = SkyCoord(ra=ra*u.deg, dec=dec*u.deg, frame='icrs')
-    print(f"Querying SIMBAD at RA={ra:.5f}, Dec={dec:.5f}, radius={radius.to(u.arcsec)}")
+    logging.info(f"Querying SIMBAD at RA={ra:.5f}, Dec={dec:.5f}, radius={radius.to(u.arcsec)}")
     try:
         result = custom_simbad.query_region(coord, radius=radius)
     except Exception as e:
-        print(f"SIMBAD query error at RA={ra:.5f}, Dec={dec:.5f}: {e}")
+        logging.error(f"SIMBAD query error at RA={ra:.5f}, Dec={dec:.5f}: {e}")
         result = None
 
     # Normalize column names to lowercase.
@@ -113,13 +127,13 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
         if radius < 10*u.arcsec:
             return get_simbad_info(ra, dec, radius=radius + 3*u.arcsec)
         else:
-            print(f"No SIMBAD match found for RA={ra:.5f}, Dec={dec:.5f} (up to radius {radius.to(u.arcsec)})")
+            logging.error(f"No SIMBAD match found for RA={ra:.5f}, Dec={dec:.5f} (up to radius {radius.to(u.arcsec)})")
             return {"main_id": "N/A", "common_name": "N/A", "sp_type": "N/A",
                     "lum_class": "N/A", "var_type": "N/A", "brightness_range": "N/A", "vmag": "N/A"}
 
-    print("SIMBAD result row:")
+    logging.info("SIMBAD result row:")
     for col in result.colnames:
-        print(f"  {col}: {result[col][0]}")
+        logging.info(f"  {col}: {result[col][0]}")
     
     main_id = result['main_id'][0] if 'main_id' in result.colnames else "N/A"
     if isinstance(main_id, bytes):
