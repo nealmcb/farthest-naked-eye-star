@@ -240,25 +240,21 @@ def build_final_table(top_table):
         final_data.append({
             'main_id': row['simbad_main_id'],         # SIMBAD main identifier
             'common': row['common_name'],             # common name
-            'Gaia DR3': row['source_id'],             # Gaia source id
             'Vmag': f"{float(row['vmag']):.3f}" if row['vmag'] != "N/A" else "N/A",
             'Gmag': f"{row['phot_g_mean_mag']:.3f}",
             'plx': f"{row['parallax']:.5f}",           # Parallax in mas
             'plx_err': f"{row['parallax_error']:.5f}",  # Parallax error in mas
             'ly_nom': f"{d_nom_int}",
             'ly_lb': f"{d_lb_int}",
+            'Con': constellation,
+            'RA': f"{row['ra']:.5f}",
+            'Dec': f"{row['dec']:.5f}",
             'spec': row['sp_type'],
             'lum': row['lum_class'],
             'var': row['var_type'],
-            'brange': row['brightness_range'],
-            'Con': constellation,
-            'RA': f"{row['ra']:.5f}",
-            'Dec': f"{row['dec']:.5f}"
+            'Gaia DR3': row['source_id']             # Gaia source id
         })
-    return Table(rows=final_data, names=[
-        'main_id','common','Gaia DR3','Vmag','Gmag',
-        'plx','plx_err','ly_nom','ly_lb','spec','lum','var','brange','Con','RA','Dec'
-    ])
+    return Table(rows=final_data)
 
 final_table_nom = build_final_table(filtered_nom)
 final_table_lb = build_final_table(filtered_lb)

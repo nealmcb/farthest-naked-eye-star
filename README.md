@@ -2,27 +2,24 @@
 
 Python software to search Gaia for "most distant naked-eye star" candidates
 
-Code written mostloy by ChatGPT o3-mini, evolved via dozens of prompts by Neal McBurnett, 2025-02-01
+Code written mostly by ChatGPT o3-mini, evolved via dozens of prompts by Neal McBurnett, 2025-02-01
 
 # Usage
 ```
-python furthest_visible_star.py  | tee output-log.txt
+python furthest_naked_eye_star.py  | tee output-log.txt
 csvlook -I gaia_top20_lowerbound.csv
 ```
 
 For line execution and coverage counts:
 
 ```
-python -m trace --count --coverdir=trace_results furthest_visible_star.py
+python -m trace --count --coverdir=trace_results furthest_naked_eye_star.py
 more trace_results/furthest_visible_star.cover
 ```
 
-
-# Notes
-
 # TODO
 * Can SIMBAD query be sped up or run in parallel via Gaia IDs for these rather bright stars?
-  Individual queries take nearly 20 seconds
+  Individual queries take perhaps 10 seconds
 * Confirm that get_simbad_info() is getting the right stars
 * Can extract_common_name() be refined?
 * Clean up code by moving functions to the top
@@ -32,4 +29,3 @@ more trace_results/furthest_visible_star.cover
 
 * Provide answers for a given location for a given time and weather conditions
 * Revisit when Gaia DR4 comes out, with significantly improved distances
-
