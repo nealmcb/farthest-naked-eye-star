@@ -88,7 +88,7 @@ top50_lb = sorted_lb[:50]
 custom_simbad = Simbad()
 custom_simbad.reset_votable_fields()
 # Request: MAIN_ID, ids, sp_type, otype, and visual magnitude ("v").
-custom_simbad.add_votable_fields('MAIN_ID','ids','sp_type','otype','flux(V)')
+custom_simbad.add_votable_fields('MAIN_ID','ids','sp_type','otype','V')
 
 def extract_luminosity_class(sp_type):
     if sp_type is None or sp_type.strip() == "":
