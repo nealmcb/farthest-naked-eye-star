@@ -27,6 +27,7 @@ Thanks to the
 * Can extract_common_name() be refined?
 * Clean up code by moving functions to the top
 * Make it usable as a library by moving code to main()
+* For custom queries, either sort while including unsortable rows also, or leave unsorted but only process one table
 * Validate spectral type filtering: re.search(r'(I{1,3}[ab]?)|(IV)|(V)', sp_type)
   But note that so far they all passed
 

@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
 """
+Find the most distant stars visible to the naked eye.
+
+Usage
+   python farthest_naked_eye_star.py [query]
+
+Produces two csv files based on nominal parallax, and a lower bound
+by adding the parallax error bound to the nominal value:
+
+* gaia_top20_nominal.csv
+* gaia_top20_lowerbound.csv
+
+If a query is provided, all the matching stars will be described.
+For example,
+`python farthest_naked_eye_star.py "source_id in (1998148532777850880, 5350358584482202880)"`
+returns a table of data for just two stars, Rho Cas and Eta Carinae, ignoring the fact
+that the latter doesn't have a parallax in Gaia DR3.
+
 This script implements the following strategy:
   - Query Gaia DR3 for stars with Gmag < 6.2 and positive parallax.
   - Compute nominal and conservative lower-bound distances (in ly).
@@ -15,12 +32,19 @@ This script implements the following strategy:
 
 import sys
 import logging
+import numpy as np
 from astroquery.gaia import Gaia
 from astroquery.simbad import Simbad
 from astropy.table import Table
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 import re
+
+# logging.basicConfig(level=logging.INFO)
+
+vmag_limit = 6.0
+show_all = False
+where = None
 
 ###############################
 # Part 1. Gaia Query and Distance Calculation
@@ -36,10 +60,14 @@ WHERE phot_g_mean_mag < 6.2
 
 # Given a WHERE clause, query for just that
 if len(sys.argv) > 1:
+    where = sys.argv[1]
+    print(f'Custom query {where=}')
     gaia_query = f"""
-SELECT source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
-FROM gaiadr3.gaia_source
-WHERE {sys.argv[1]}"""
+      SELECT source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
+      FROM gaiadr3.gaia_source
+      WHERE {where}"""
+    show_all = True
+
 
 print("Launching Gaia DR3 query …")
 job = Gaia.launch_job(gaia_query)
@@ -80,15 +108,20 @@ for row in gaia_results:
 gaia_results['distance_ly_nominal'] = nominal_distances
 gaia_results['distance_ly_lower_bound'] = lower_bound_distances
 
-# Make two sorted copies:
+# Unless we're reporting on everything found for a custom query, make two sorted copies:
+# FIXME: For custom queries, either sort while including unsortable rows also,
+#  or leave unsorted but only process one table
+if not where:
+    sorted_nom = gaia_results[gaia_results['distance_ly_nominal'] > 0].copy()
+    sorted_nom.sort('distance_ly_nominal', reverse=True)
+    top50_nom = sorted_nom[:50]
 
-sorted_nom = gaia_results[gaia_results['distance_ly_nominal'] > 0].copy()
-sorted_nom.sort('distance_ly_nominal', reverse=True)
-top50_nom = sorted_nom[:50]
-
-sorted_lb = gaia_results[gaia_results['distance_ly_lower_bound'] > 0].copy()
-sorted_lb.sort('distance_ly_lower_bound', reverse=True)
-top50_lb = sorted_lb[:50]
+    sorted_lb = gaia_results[gaia_results['distance_ly_lower_bound'] > 0].copy()
+    sorted_lb.sort('distance_ly_lower_bound', reverse=True)
+    top50_lb = sorted_lb[:50]
+else:
+    top50_nom = gaia_results
+    top50_lb = gaia_results
 
 ###############################
 # Part 2. SIMBAD Query and Helper Functions
@@ -127,7 +160,7 @@ def get_simbad_info(ra, dec, radius=2*u.arcsec):
         result = None
 
     # Normalize column names to lowercase.
-    if result is not None:
+    if len(result) > 0:
         orig_cols = result.colnames.copy()
         for col in orig_cols:
             result.rename_column(col, col.lower())
@@ -220,27 +253,37 @@ def enrich_with_simbad(top_table):
 
 print("\nEnriching nominal candidates (top50_nom) with SIMBAD info …")
 top50_nom = enrich_with_simbad(top50_nom)
+
 print("\nEnriching lower-bound candidates (top50_lb) with SIMBAD info …")
 top50_lb = enrich_with_simbad(top50_lb)
 
-# Now, filter each table to keep only rows with Vmag < 6.
-def filter_by_vmag(top_table):
+def filter_by_vmag(top_table, show_all):
+    "Filter table to keep only rows with Vmag < vmag_limit unless show_all"
+
     filtered_rows = []
     for row in top_table:
         try:
-            vmag = float(row['vmag'])
+            if isinstance(row['vmag'], np.ma.core.MaskedArray):
+                vmag = float('NaN')
+                logging.info(f"Bypassing {row['source_id']=} vmag MaskedArray")
+            else:
+                vmag = float(row['vmag'])
         except (ValueError, TypeError):
             logging.error(f'vmag ValueError in {row=}')
             continue
-        if vmag < 6:
+        if vmag < vmag_limit or show_all:
             filtered_rows.append(row)
+
+    assert len(filtered_rows) > 0, f'No rows left after filtering: {top_table}'
     return Table(rows=filtered_rows, names=top_table.colnames)
 
-filtered_nom = filter_by_vmag(top50_nom)
-filtered_lb = filter_by_vmag(top50_lb)
+# Now, filter each table to keep only rows with Vmag < vmag_limit.
 
-print(f"\nNumber of nominal candidates with Vmag < 6: {len(filtered_nom)}")
-print(f"Number of lower-bound candidates with Vmag < 6: {len(filtered_lb)}")
+filtered_nom = filter_by_vmag(top50_nom, show_all)
+filtered_lb = filter_by_vmag(top50_lb, show_all)
+
+print(f"\nNumber of nominal candidates: {len(filtered_nom)}")
+print(f"Number of lower-bound candidates: {len(filtered_lb)}")
 
 ###############################
 # Part 4. Build Final Tables with New Column Order and Labels
@@ -266,6 +309,14 @@ def build_final_table(top_table):
             constellation = coord.get_constellation(short_name=True)
         except TypeError:
             constellation = coord.get_constellation()
+
+        # Avoid pesky elusive FutureWarning: Format strings passed to MaskedConstant are ignored, but in future may error or produce different behavior
+        # Note, masked value can be accessed as row['parallax'].data, typically 0.0 here
+        #  Or coerced to NaN via float(row['parallax'])
+        if isinstance(row['parallax'], np.ma.core.MaskedArray):
+            logging.info(f"Fixing {row['source_id']=} parallax MaskedArray formatting")
+            row['parallax'] = float('NaN')
+            row['parallax_error'] = float('NaN')
         final_data.append({
             'main_id': row['simbad_main_id'],         # SIMBAD main identifier
             'common': row['common_name'],             # common name
@@ -288,9 +339,9 @@ def build_final_table(top_table):
 final_table_nom = build_final_table(filtered_nom)
 final_table_lb = build_final_table(filtered_lb)
 
-print("\nFinal Table (Nominal candidates with Vmag < 6):")
+print("\nFinal Table (Nominal candidates):")
 print(final_table_nom)
-print("\nFinal Table (Lower-bound candidates with Vmag < 6):")
+print("\nFinal Table (Lower-bound candidates):")
 print(final_table_lb)
 
 # Save to CSV:

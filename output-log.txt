@@ -5,10 +5,10 @@ Enriching nominal candidates (top50_nom) with SIMBAD info …
 
 Enriching lower-bound candidates (top50_lb) with SIMBAD info …
 
-Number of nominal candidates with Vmag < 6: 19
-Number of lower-bound candidates with Vmag < 6: 16
+Number of nominal candidates: 19
+Number of lower-bound candidates: 16
 
-Final Table (Nominal candidates with Vmag < 6):
+Final Table (Nominal candidates):
   main_id         common       Vmag  Gmag ... lum var       Gaia DR3     
 ----------- ----------------- ----- ----- ... --- --- -------------------
   * mu. Cep     TIC 260614141 4.080 2.451 ...  Ia N/A 2202630001603369856
@@ -31,7 +31,7 @@ V* V509 Cas     TIC 313555973 5.130 4.999 ... N/A N/A 2009856132592845568
 * psi01 Aur     TIC 258622975 4.750 4.122 ...  Ia N/A  970675154497903616
   HD 111904        LLNS  9341 5.770 5.635 ...  Ia  V* 6056408567538569088
 
-Final Table (Lower-bound candidates with Vmag < 6):
+Final Table (Lower-bound candidates):
   main_id         common       Vmag  Gmag ... lum var       Gaia DR3     
 ----------- ----------------- ----- ----- ... --- --- -------------------
   * rho Cas      TIC 65366071 4.590 4.050 ... N/A N/A 1998148532777850880
