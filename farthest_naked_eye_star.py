@@ -13,6 +13,7 @@ This script implements the following strategy:
   - Print how many objects remain in each selection.
 """
 
+import sys
 import logging
 from astroquery.gaia import Gaia
 from astroquery.simbad import Simbad
@@ -31,8 +32,15 @@ gaia_query = """
 SELECT TOP 10000 source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
 FROM gaiadr3.gaia_source
 WHERE phot_g_mean_mag < 6.2
-  AND parallax > 0
 """
+
+# Given a WHERE clause, query for just that
+if len(sys.argv) > 1:
+    gaia_query = f"""
+SELECT source_id, ra, dec, phot_g_mean_mag, parallax, parallax_error
+FROM gaiadr3.gaia_source
+WHERE {sys.argv[1]}"""
+
 print("Launching Gaia DR3 query …")
 job = Gaia.launch_job(gaia_query)
 gaia_results = job.get_results()
@@ -54,20 +62,31 @@ def compute_lower_bound_distance_ly(parallax_mas, parallax_err_mas):
 nominal_distances = []
 lower_bound_distances = []
 for row in gaia_results:
-    p = row['parallax']
+    plx = row['parallax']
     sigma = row['parallax_error']
-    nominal_distances.append(compute_distance_ly(p))
-    lower_bound_distances.append(compute_lower_bound_distance_ly(p, sigma))
+    if plx < 0:
+        logging.info(f"parallax < 0: {plx=}, {sigma=}, {row}")
+        d = float('NaN')
+    else:
+        d = compute_distance_ly(plx)
+    nominal_distances.append(d)
+    if plx + sigma < 0:
+        logging.info(f"lower bound < 0: plx + sigma < 0 {plx=}, {sigma=}, {row}")
+        d = float('NaN')
+    else:
+        d = compute_lower_bound_distance_ly(plx, sigma)
+    lower_bound_distances.append(d)
 
 gaia_results['distance_ly_nominal'] = nominal_distances
 gaia_results['distance_ly_lower_bound'] = lower_bound_distances
 
 # Make two sorted copies:
-sorted_nom = gaia_results.copy()
+
+sorted_nom = gaia_results[gaia_results['distance_ly_nominal'] > 0].copy()
 sorted_nom.sort('distance_ly_nominal', reverse=True)
 top50_nom = sorted_nom[:50]
 
-sorted_lb = gaia_results.copy()
+sorted_lb = gaia_results[gaia_results['distance_ly_lower_bound'] > 0].copy()
 sorted_lb.sort('distance_ly_lower_bound', reverse=True)
 top50_lb = sorted_lb[:50]
 
@@ -211,6 +230,7 @@ def filter_by_vmag(top_table):
         try:
             vmag = float(row['vmag'])
         except (ValueError, TypeError):
+            logging.error(f'vmag ValueError in {row=}')
             continue
         if vmag < 6:
             filtered_rows.append(row)
@@ -229,8 +249,17 @@ print(f"Number of lower-bound candidates with Vmag < 6: {len(filtered_lb)}")
 def build_final_table(top_table):
     final_data = []
     for row in top_table:
-        d_nom_int = int(round(row['distance_ly_nominal']))
-        d_lb_int = int(round(row['distance_ly_lower_bound']))
+        try:
+            d_lb_int = int(round(row['distance_ly_lower_bound']))
+        except:
+            logging.info(f"Error distance_ly_lower_bound non-int {row}")
+            d_lb_int = -1
+        try:
+            d_nom_int = int(round(row['distance_ly_nominal']))
+        except:
+            logging.info(f"Error distance_ly_nominal non-int {row}")
+            d_nom_int = -1
+
         # Compute constellation abbreviation
         coord = SkyCoord(ra=row['ra']*u.deg, dec=row['dec']*u.deg, frame='icrs')
         try:

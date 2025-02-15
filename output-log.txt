@@ -1,5 +1,5 @@
 Launching Gaia DR3 query …
-Gaia query returned 8318 rows.
+Gaia query returned 8609 rows.
 
 Enriching nominal candidates (top50_nom) with SIMBAD info …
 
@@ -34,6 +34,7 @@ V* V509 Cas     TIC 313555973 5.130 4.999 ... N/A N/A 2009856132592845568
 Final Table (Lower-bound candidates with Vmag < 6):
   main_id         common       Vmag  Gmag ... lum var       Gaia DR3     
 ----------- ----------------- ----- ----- ... --- --- -------------------
+  * rho Cas      TIC 65366071 4.590 4.050 ... N/A N/A 1998148532777850880
 V* V810 Cen     TIC 322418709 5.030 4.792 ...  Ia N/A 5333358794709001216
   * phi Cas     TIC 332680754 4.980 4.736 ...  Ia N/A  413828761929696256
 V* V509 Cas     TIC 313555973 5.130 4.999 ... N/A N/A 2009856132592845568
@@ -49,6 +50,5 @@ V* V509 Cas     TIC 313555973 5.130 4.999 ... N/A N/A 2009856132592845568
   HD 111904        LLNS  9341 5.770 5.635 ...  Ia  V* 6056408567538569088
     * y Car     TIC 467274664 4.620 4.431 ...  Ia N/A 5337672556798367360
   HD 111613     TIC 435684037 5.720 5.583 ...  Ia N/A 6056416676437740416
-*   6 Cas A       ADS 17022 A 5.590 5.293 ...  Ia N/A 2012942564813958656
 
 Final tables saved to 'gaia_top20_nominal.csv' and 'gaia_top20_lowerbound.csv'.
