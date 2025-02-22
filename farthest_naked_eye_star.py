@@ -18,6 +18,7 @@ returns a table of data for just two stars, Rho Cas and Eta Carinae, ignoring th
 that the latter doesn't have a parallax in Gaia DR3.
 
 For the main results here, I took the commonly-used criteria of "V magnitude < 6.0". That can of course be changed in the code.
+
 Gaia records brightness using the "G" passband, between about 330 nm and 1050, vs the V passband intended to model human perception, which I think is based on just the wavelengths between 500 and 600 nm. The code gets V magnitudes from SIMBAD.
 
 I did some initial queries which suggest that it is common for the G magnitude to be significantly less than V, but rare to find stars with G larger than 6.2, yet V less than 6.0. So the results shown here use a hard cutoff of G < 6.2.
@@ -31,6 +32,12 @@ This script implements the following strategy:
       * SIMBAD main identifier, common name, Vmag, spectral type, luminosity class, variable star type.
   - Then filter each table to keep only those with Vmag < 6.0. That leaves 19 nominal candidates and 16 lower-bound candidates.
   - Finally, build and save final tables.
+
+TODO:
+
+* Fix error with python farthest_naked_eye_star.py 'source_id in (5115463180914712448, 5140693571158739840)'
+  Note that for fast-moving stars, SIMBAD can't find them using their Gaia DR3 epoch J2016.0....
+  Probably best to precess Gaia position to J2000.0, e.g. via SkyCoord.apply_space_motion()
 """
 
 import sys
